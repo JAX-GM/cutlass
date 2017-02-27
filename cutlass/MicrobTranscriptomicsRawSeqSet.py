@@ -59,6 +59,9 @@ class MicrobTranscriptomicsRawSeqSet(Base):
         self._study = None
         self._urls = ['']
 
+        # Optional properties
+        self._private_files = None
+
     def validate(self):
         """
         Validates the current object's data/JSON against the current
@@ -87,10 +90,14 @@ class MicrobTranscriptomicsRawSeqSet(Base):
             self.logger.info("Validation did not succeed for " + __name__ + ".")
             problems.append(error_message)
 
-        if self._local_file is None:
-            problems.append("Local file is not yet set.")
-        elif not os.path.isfile(self._local_file):
-            problems.append("Local file does not point to an actual file.")
+        if self._private_files:
+            self.logger.info("User specified the files are private.")
+        else:
+            self.logger.info("Data is NOT private, so check that local_file is set.")
+            if self._local_file is None:
+                problems.append("Local file is not yet set.")
+            elif not os.path.isfile(self._local_file):
+                problems.append("Local file does not point to an actual file.")
 
         if 'sequenced_from' not in self._links.keys():
             problems.append("Must add a 'sequenced_from' link to a wgs_dna_prep.")
@@ -111,26 +118,16 @@ class MicrobTranscriptomicsRawSeqSet(Base):
 
         Returns:
             True if the data validates, False if the current state of
-            fields in the instance do not validate with the OSDF instance
+            fields in the instance do not validate with OSDF or
+            other node requirements.
         """
         self.logger.debug("In is_valid.")
 
-        document = self._get_raw_doc()
+        problems = self.validate()
 
-        session = iHMPSession.get_session()
-        self.logger.info("Got iHMP session.")
-
-        (valid, error_message) = session.get_osdf().validate_node(document)
-
-        if self._local_file is None:
-            self.logger.error("Must set the local file of the sequence set.")
-            valid = False
-        elif not os.path.isfile(self._local_file):
-            self.logger.error("Local file does not point to an actual file.")
-            valid = False
-
-        if 'sequenced_from' not in self._links.keys():
-            self.logger.error("Must have of 'sequenced_from' linkage.")
+        valid = True
+        if len(problems):
+            self.logger.error("There were %s problems." % str(len(problems)))
             valid = False
 
         self.logger.debug("Valid? %s" % str(valid))
@@ -291,6 +288,32 @@ class MicrobTranscriptomicsRawSeqSet(Base):
         self.logger.debug("In 'local_file' setter.")
 
         self._local_file = local_file
+
+    @property
+    def private_files(self):
+        """
+        bool: Whether this object describes private data that should not
+        be uploaded to the DCC. Defaults to false.
+        """
+        self.logger.debug("In 'private_files' getter.")
+        return self._private_files
+
+    @private_files.setter
+    @enforce_bool
+    def private_files(self, private_files):
+        """
+        The setter for the private files flag to denote this object
+        describes data that should not be uploaded to the DCC.
+
+        Args:
+            private_files (bool):
+
+        Returns:
+            None
+        """
+        self.logger.debug("In 'private_files' setter.")
+
+        self._private_files = private_files
 
     @property
     def seq_model(self):
@@ -477,6 +500,10 @@ class MicrobTranscriptomicsRawSeqSet(Base):
            self.logger.debug(__name__ + " object has the sequence_type set.")
            doc['meta']['sequence_type'] = self._sequence_type
 
+        if self._private_files is not None:
+            self.logger.debug("Object has the 'private_files' property set.")
+            doc['meta']['private_files'] = self._private_files
+
         return doc
 
     @staticmethod
@@ -564,6 +591,9 @@ class MicrobTranscriptomicsRawSeqSet(Base):
             module_logger.info(__name__ + " data has 'sequence_type' present.")
             seq_set._sequence_type = seq_set_data['meta']['sequence_type']
 
+        if 'private_files' in seq_set_data['meta']:
+            seq_set._private_files = seq_set_data['meta']['private_files']
+
         module_logger.debug("Returning loaded " + __name__)
 
         return seq_set
@@ -620,34 +650,10 @@ class MicrobTranscriptomicsRawSeqSet(Base):
 
         return seq_set
 
-    def save(self):
-        """
-        Saves the data in the current instance. The JSON form of the current
-        data for the instance is validated in the save function. If the data is
-        not valid, then the data will not be saved. If the instance was saved
-        previously, then the node ID is assigned the alpha numeric found in the
-        OSDF instance. If not saved previously, then the node ID is 'None', and
-        upon a successful, will be assigned to the alpha numeric ID found in
-        the OSDF instance. Also, the version is updated as the data is saved in
-        the OSDF instance.
-
-        Args:
-            None
-
-        Returns;
-            True if successful, False otherwise.
-
-        """
-        self.logger.debug("In save.")
-
-        if not self.is_valid():
-            self.logger.error("Cannot save, data is invalid")
-            return False
+    def _upload_data(self):
+        self.logger.debug("In _upload_data.")
 
         session = iHMPSession.get_session()
-        self.logger.info("Got iHMP session.")
-
-        success = False
 
         study = self._study
 
@@ -679,39 +685,94 @@ class MicrobTranscriptomicsRawSeqSet(Base):
                                            remote_path)
 
         if not upload_result:
-            self.logger.error("Experienced an error uploading the sequence set. Aborting save.")
-            return False
+            self.logger.error("Experienced an error uploading the data. " + \
+                              "Aborting save.")
+            raise Exception("Unable to upload Microbial Transcriptomics raw sequence set")
         else:
             self._urls = [ "fasp://" + MicrobTranscriptomicsRawSeqSet.aspera_server + remote_path ]
 
-        if self.id is None:
-            # The document has not yet been saved
-            seq_set_data = self._get_raw_doc()
-            self.logger.info("Got the raw JSON document.")
+    def save(self):
+        """
+        Saves the data in OSDF. The JSON form of the current data for the
+        instance is validated in the save function. If the data is not valid,
+        then the data will not be saved. If the instance was saved previously,
+        then the node ID is assigned the alpha numeric found in the OSDF
+        instance. If not saved previously, then the node ID is 'None', and upon
+        a successful save, will be assigned to thealpha numeric ID found in
+        OSDF.
+
+        Args:
+            None
+
+        Returns;
+            True if successful, False otherwise.
+
+        """
+        self.logger.debug("In save.")
+
+        if not self.is_valid():
+            self.logger.error("Cannot save, data is invalid")
+            return False
+
+        session = iHMPSession.get_session()
+        self.logger.info("Got iHMP session.")
+
+        success = False
+
+        if self._private_files:
+            self._urls = [ "<private>" ]
+        else:
+            try:
+                self._upload_data()
+            except Exception as e:
+                self.logger.exception(e)
+                # Don't bother continuing...
+                return False
+
+        osdf = session.get_osdf()
+
+        if self._id is None:
+            self.logger.info("About to insert a new " + __name__ + " OSDF node.")
+
+            # Get the JSON form of the data and load it
+            self.logger.debug("Converting " + __name__ + " to parsed JSON form.")
+            data = json.loads( self.to_json() )
 
             try:
                 self.logger.info("Attempting to save a new node.")
-                node_id = session.get_osdf().insert_node(seq_set_data)
-                self.logger.info("Save for " + __name__ + " %s successful." % node_id)
-                self.logger.info("Setting ID for " + __name__ + " %s." % node_id)
+                node_id = osdf.insert_node(data)
+
                 self._set_id(node_id)
                 self._version = 1
+
+                self.logger.info("Save for " + __name__ + " %s successful." % node_id)
+                self.logger.info("Setting ID for " + __name__ + " %s." % node_id)
+
                 success = True
             except Exception as e:
+                self.logger.exception(e)
                 self.logger.error("An error occurred while saving " + __name__ + ". " +
                                   "Reason: %s" % e)
         else:
-            seq_set_data = self._get_raw_doc()
+            self.logger.info("%s already has an ID, so we do an update (not an insert)." % __name__)
 
             try:
-                self.logger.info("Attempting to update " + __name__ + " with ID: %s." % self._id)
-                session.get_osdf().edit_node(seq_set_data)
-                self.logger.info("Update for " + __name__ + " %s successful." % self._id)
+                seq_set_data = self._get_raw_doc()
+                seq_set_id = self._id
+                self.logger.info("Attempting to update " + __name__ + " with ID: %s." % seq_set_id)
+                osdf.edit_node(seq_set_data)
+                self.logger.info("Update for " + __name__ + " %s successful." % seq_set_id)
+
+                seq_set_data = osdf.get_node(seq_set_id)
+                latest_version = seq_set_data['ver']
+
+                self.logger.debug("The version of this %s is now %s" % (__name__, str(latest_version)))
+                self._version = latest_version
                 success = True
             except Exception as e:
+                self.logger.exception(e)
                 self.logger.error("An error occurred while updating " +
                                   __name__ + " %s. Reason: %s" % self._id, e)
 
         self.logger.debug("Returning " + str(success))
-
         return success
