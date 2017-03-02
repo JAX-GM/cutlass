@@ -259,7 +259,7 @@ class Base(object):
             self.logger.warn("Attempt to delete a node with no ID.")
             raise Exception("Node does not have an ID.")
 
-        visit_node_id = self._id
+        node_id = self._id
 
         session = iHMPSession.get_session()
         self.logger.info("Got iHMP session.")
@@ -268,8 +268,8 @@ class Base(object):
         success = False
 
         try:
-            self.logger.info("Deleting node with OSDF ID %s." % visit_node_id)
-            session.get_osdf().delete_node(visit_node_id)
+            self.logger.info("Deleting node with OSDF ID %s." % node_id)
+            session.get_osdf().delete_node(node_id)
             success = True
         except Exception as e:
             self.logger.exception(e)

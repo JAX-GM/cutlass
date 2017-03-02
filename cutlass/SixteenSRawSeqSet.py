@@ -25,7 +25,6 @@ class SixteenSRawSeqSet(Base):
         namespace (str): The namespace this class will use in the OSDF instance
     """
     namespace = "ihmp"
-
     aspera_server = "aspera.ihmpdcc.org"
 
     def __init__(self):
@@ -70,8 +69,8 @@ class SixteenSRawSeqSet(Base):
             None
 
         Returns:
-            A list of strings, where each string is a validation error that the
-            OSDF instance identified.
+            A list of strings, where each string is the error that the
+            validation raised during OSDF validation
         """
         self.logger.debug("In validate.")
 
@@ -389,7 +388,7 @@ class SixteenSRawSeqSet(Base):
         The setter for the SixteenSRawSeqSet size in bytes.
 
         Args:
-            size (int): The size of the sequence set in bytes.
+            size (int): The size of the local_file in bytes.
 
         Returns:
             None
@@ -524,10 +523,10 @@ class SixteenSRawSeqSet(Base):
     @staticmethod
     def search(query = "\"16s_raw_seq_set\"[node_type]"):
         """
-        Searches OSDF for 16s DNA prep nodes. Any criteria the user wishes to
-        add is provided by the user in the query language specifications
-        provided in the OSDF documentation. A general format is (including the
-        quotes and brackets):
+        Searches the OSDF database through all SixteenSTrimmedSeqSet node
+        types. Any criteria the user wishes to add is provided by the user in
+        the query language specifications provided in the OSDF documentation. A
+        general format is (including the quotes and brackets):
 
         "search criteria"[field to search]
 
@@ -535,7 +534,8 @@ class SixteenSRawSeqSet(Base):
         otherwise an empty list will be returned.
 
         Args:
-            query (str): The OQL query for OSDF.
+            query (str): The OQL query for the OSDF framework. Defaults to the
+                         SixteenSRawSeqSet node type.
 
         Returns:
             Returns an array of objects. It returns an empty list if
@@ -564,93 +564,10 @@ class SixteenSRawSeqSet(Base):
 
         return result_list
 
-    def delete(self):
-        """
-        Deletes the current object (self) from the OSDF instance. If the object
-        has not been saved previously (node ID is not set), then an error message
-        will be logged stating the object was not deleted. If the ID is set, and
-        exists in the OSDF instance, then the object will be deleted from the
-        OSDF instance, and this object must be re-saved in order to use it again.
-
-        Args:
-            None
-
-        Returns:
-            True upon successful deletion, False otherwise.
-        """
-        self.logger.debug("In delete.")
-
-        if self._id is None:
-            self.logger.warn("Attempt to delete a sixteensdnaprep with no ID.")
-            raise Exception("Object does not have an ID.")
-
-        prep_id = self._id
-
-        session = iHMPSession.get_session()
-        self.logger.info("Got iHMP session.")
-
-        # Assume failure
-        success = False
-
-        try:
-            self.logger.info("Deleting " + __name__ + " with OSDF ID %s." % prep_id)
-            session.get_osdf().delete_node(prep_id)
-            success = True
-        except Exception as e:
-            self.logger.exception(e)
-            self.logger.error("An error occurred when deleting %s.", self)
-
-        return success
-
-    @staticmethod
-    def search(query = "\"16s_raw_seq_set\"[node_type]"):
-        """
-        Searches the OSDF database through all SixteenSRawSeqSet node types.
-        Any criteria the user wishes to add is provided by the user in the
-        query language specifications provided in the OSDF documentation. A
-        general format is (including the quotes and brackets):
-
-        "search criteria"[field to search]
-
-        If there are any results, they are returned as a SixteenSRawSeqSet
-        instance, otherwise an empty list will be returned.
-
-        Args:
-            query (str): The query for the OSDF framework. Defaults to the
-                         SixteenSRawSeqSet node type.
-
-        Returns:
-            Returns an array of SixteenSRawSeqSet objects. It returns an empty
-            list if there are no results.
-        """
-        module_logger.debug("In search.")
-
-        session = iHMPSession.get_session()
-        module_logger.info("Got iHMP session.")
-
-        if query != "\"16s_raw_seq_set\"[node_type]":
-            query = query + " && \"16s_raw_seq_set\"[node_type]"
-
-        sixteenSRawSeqSet_data = session.get_osdf().oql_query(
-            SixteenSRawSeqSet.namespace, query
-        )
-
-        all_results = sixteenSRawSeqSet_data['results']
-
-        result_list = list()
-
-        if len(all_results) > 0:
-            for result in all_results:
-                seq_set_result = SixteenSRawSeqSet.load_16s_raw_seq_set(result)
-                result_list.append(seq_set_result)
-
-        return result_list
-
     @staticmethod
     def load_16s_raw_seq_set(seq_set_data):
         """
-        Takes the provided JSON string and converts it to a SixteenSRawSeqSet
-        object
+        Takes the provided JSON string and converts it to a SixteenSRawSeqSet object
 
         Args:
             seq_set_data (str): The JSON string to convert
@@ -693,16 +610,15 @@ class SixteenSRawSeqSet(Base):
     @staticmethod
     def load(seq_set_id):
         """
-        Loads the data for the specified ID from OSDF instance.  If the
-        provided ID does not exist, then an error message is provided stating
-        the project does not exist.
+        Loads the data for the specified input ID from the OSDF instance to this object.
+        If the provided ID does not exist, then an error message is provided stating the
+        node does not exist.
 
         Args:
-            seq_set_id (str): The OSDF ID for the SixteenSRawSeqSet to load.
+            seq_set_id (str): The OSDF ID for the document to load.
 
         Returns:
-            A SixteenSRawSeqSet object with all the available OSDF data loaded
-            into it.
+            A SixteenSRawSeqSet object with all the available OSDF data loaded into it.
         """
         module_logger.debug("In load. Specified ID: %s" % seq_set_id)
 
@@ -758,13 +674,13 @@ class SixteenSRawSeqSet(Base):
 
     def save(self):
         """
-        Saves the data in OSDF. The JSON form of the current data for the
-        instance is validated in the save function. If the data is not valid,
-        then the data will not be saved. If the instance was saved previously,
-        then the node ID is assigned the alpha numeric found in the OSDF
-        instance. If not saved previously, then the node ID is 'None', and upon
-        a successful save, will be assigned to the alphanumeric ID found in
-        OSDF.
+        Saves the data in the current instance. The JSON form of the current
+        data for the instance is validated in the save function. If the data is
+        not valid, then the data will not be saved. If the instance was saved
+        previously, then the node ID is assigned the alpha numeric found in the
+        OSDF instance. If not saved previously, then the node ID is 'None', and
+        upon a successful, will be assigned to the alpha numeric ID found in
+        OSDF. Also, the version is updated as the data is saved in OSDF.
 
         Args:
             None
@@ -775,7 +691,7 @@ class SixteenSRawSeqSet(Base):
         self.logger.debug("In save.")
 
         if not self.is_valid():
-            self.logger.error("Cannot save, data is invalid")
+            self.logger.error("Cannot save, data is invalid.")
             return False
 
         session = iHMPSession.get_session()
@@ -843,16 +759,17 @@ class SixteenSRawSeqSet(Base):
 
     def trimmed_seq_sets(self):
         """
-        Return iterator of all trimmed sequence sets that were computed from
-        this sequence set.
+        Return iterator of all trimmed sequence sets that were computed from this sequence set.
         """
+        self.logger.debug("In trimmed_seq_sets().")
         linkage_query = '"{}"[linkage.computed_from]'.format(self.id)
         query = iHMPSession.get_session().get_osdf().oql_query
 
         from SixteenSTrimmedSeqSet import SixteenSTrimmedSeqSet
 
         for page_no in count(1):
-            res = query("ihmp", linkage_query, page=page_no)
+            res = query(SixteenSRawSeqSet.namespace, linkage_query,
+                        page=page_no)
             res_count = res['result_count']
 
             for doc in res['results']:
